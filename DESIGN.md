@@ -12,22 +12,22 @@ Every player in the round has two numeric inputs:
 
 | Input  | Meaning |
 |--------|---------|
-| `hand` | Points left in the player's hand. Paid to the declarer. Declarer's own hand is `0`. |
+| `haath` | Points left in the player's haath. Paid to the declarer. Declarer's own haath is `0`. |
 | `value`| A second per-player number that is **netted pairwise** against every other player. |
 
 A round produces a **delta** (score change) for each player. **All deltas in a round sum to 0** —
 it is a zero-sum settlement ledger.
 
-### 1.1 Hand component — paid to the declarer
+### 1.1 Haath component — paid to the declarer
 
-Each non-declarer pays their `hand` to the declarer.
+Each non-declarer pays their `haath` to the declarer.
 
 ```
-handDelta(declarer)     = + Σ hand(j)   for all non-declarers j
-handDelta(non-declarer) = − hand(self)
+haathDelta(declarer)     = + Σ haath(j)   for all non-declarers j
+haathDelta(non-declarer) = − haath(self)
 ```
 
-The declarer's own `hand` is always `0` (they went out), so it contributes nothing.
+The declarer's own `haath` is always `0` (they went out), so it contributes nothing.
 This component sums to 0 on its own.
 
 ### 1.2 Value component — pairwise net across all players
@@ -49,7 +49,7 @@ sums to 0 on its own.
 ### 1.3 Round delta and lifetime score
 
 ```
-roundDelta(i)   = handDelta(i) + valueDelta(i)
+roundDelta(i)   = haathDelta(i) + valueDelta(i)
 lifetimeScore(i)= Σ roundDelta(i)   over all rounds the player appears in
 ```
 
@@ -58,9 +58,9 @@ Because each component is zero-sum, every round sums to 0 and so does the lifeti
 
 ### 1.4 Worked example (4 players, p1 declares)
 
-`Σvalue = 3+4+1+6 = 14`, `n = 4`. Value part = `4·value − 14`. Hand part for p1 = `5+8+2`.
+`Σvalue = 3+4+1+6 = 14`, `n = 4`. Value part = `4·value − 14`. Haath part for p1 = `5+8+2`.
 
-| player        | hand | value | hand part | value part | **round delta** |
+| player        | haath | value | haath part | value part | **round delta** |
 |---------------|------|-------|-----------|-----------|-----------------|
 | p1 (declarer) | 0    | 3     | +15       | −2        | **+13**         |
 | p2            | 5    | 4     | −5        | +2        | **−3**          |
@@ -113,7 +113,7 @@ entries(
   id        INTEGER PRIMARY KEY,
   round_id  INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
   player_id INTEGER NOT NULL REFERENCES players(id),
-  hand      INTEGER NOT NULL DEFAULT 0,
+  haath      INTEGER NOT NULL DEFAULT 0,
   value     INTEGER NOT NULL DEFAULT 0,
   UNIQUE(round_id, player_id)
 );
@@ -126,7 +126,7 @@ among the participants.
 No stored `number`: rounds are displayed in `created_at`/`id` order, so deleting a round leaves
 no gaps to renumber. Deleting a round cascades to its entries.
 
-Stored data is just the **raw inputs** (hand, value, who declared, who participated). All deltas
+Stored data is just the **raw inputs** (haath, value, who declared, who participated). All deltas
 and standings are **computed on read** in Go from §1 — never stored — so the rules live in exactly
 one place and historical rounds recompute correctly if logic is ever tweaked.
 
@@ -139,16 +139,16 @@ one place and historical rounds recompute correctly if logic is ever tweaked.
 | `POST /api/players`       | `{ "name": "Arjun" }`                                        | created player |
 | `PUT /api/players/{id}`   | `{ "name": "Arjun G" }`                                      | renamed player |
 | `DELETE /api/players/{id}`| —                                                           | `204`; rejected `409` if the player has any entries |
-| `POST /api/rounds`        | `{ "declarer_id": 1, "entries": [{player_id,hand,value}] }` | created round + computed deltas |
+| `POST /api/rounds`        | `{ "declarer_id": 1, "entries": [{player_id,haath,value}] }` | created round + computed deltas |
 | `PUT /api/rounds/{id}`    | same shape as `POST /api/rounds`                            | updated round (replaces declarer + all entries) |
 | `DELETE /api/rounds/{id}` | —                                                           | `204`; cascades to entries |
 
 `GET /api/state` is the single source the UI renders from. Each round in the response
-includes per-player `hand`, `value`, and computed `delta`; `standings` is the lifetime board
+includes per-player `haath`, `value`, and computed `delta`; `standings` is the lifetime board
 sorted by score descending.
 
 Editing a round (`PUT`) is a full replace: validate the new participant set (declarer included,
-≥2 players, declarer's hand forced to 0), delete the old entries, and insert the new ones in one
+≥2 players, declarer's haath forced to 0), delete the old entries, and insert the new ones in one
 transaction. Player delete is only allowed for a player who never played, to keep historical
 round math intact; renaming is fine.
 
@@ -160,7 +160,7 @@ Three sections on one page, all driven by `/api/state`:
 2. **Players** — name field + button to add; rename inline; delete (disabled/hidden once a
    player has played a round).
 3. **Add round** — first tick which players are *in* this round, pick the declarer from them,
-   then a row per participant with `hand` and `value` inputs (declarer's `hand` locked to 0);
+   then a row per participant with `haath` and `value` inputs (declarer's `haath` locked to 0);
    submit.
 4. **History** — past rounds (newest first) showing participants, inputs, and computed deltas,
    each with **Edit** (reopens the round form prefilled) and **Delete** controls.

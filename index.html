@@ -67,14 +67,14 @@
 
   <section>
     <h2 id="roundFormTitle">New round</h2>
-    <p class="muted" style="margin-top:0">Tick who played, choose who declared, enter each player's hand and value.</p>
+    <p class="muted" style="margin-top:0">Tick who played, choose who declared, enter each player's haath and value.</p>
     <div id="participants" class="row"></div>
     <div id="declarerRow" class="row" style="margin:.7rem 0">
       <span class="muted">Declarer:</span>
       <select id="declarer"></select>
     </div>
     <table id="entryTable"><thead><tr>
-      <th>Player</th><th class="num">Hand</th><th class="num">Value</th>
+      <th>Player</th><th class="num">Haath</th><th class="num">Value</th>
     </tr></thead><tbody></tbody></table>
     <div class="err" id="roundErr"></div>
     <div class="row">
@@ -170,7 +170,7 @@ function renderRoundForm() {
     const isDecl = p.id === declarerId;
     return `<tr data-pid="${p.id}">
       <td>${esc(p.name)}${isDecl ? '<span class="declarer-tag">declared</span>' : ""}</td>
-      <td class="num"><input type="number" class="hand" value="0" ${isDecl ? "disabled title='declarer hand is 0'" : ""}></td>
+      <td class="num"><input type="number" class="haath" value="0" ${isDecl ? "disabled title='declarer haath is 0'" : ""}></td>
       <td class="num"><input type="number" class="value" value="0"></td>
     </tr>`;
   }).join("");
@@ -184,7 +184,7 @@ function renderHistory() {
     const rows = r.entries.map(e => `
       <tr>
         <td>${esc(nameOf(e.player_id))}${e.player_id === r.declarer_id ? '<span class="declarer-tag">declared</span>' : ""}</td>
-        <td class="num muted">${e.hand}</td>
+        <td class="num muted">${e.haath}</td>
         <td class="num muted">${e.value}</td>
         <td class="num ${cls(e.delta)}">${fmt(e.delta)}</td>
       </tr>`).join("");
@@ -196,7 +196,7 @@ function renderHistory() {
           <button class="ghost danger" data-delr="${r.id}">delete</button>
         </span>
       </div>
-      <table><thead><tr><th>Player</th><th class="num">Hand</th><th class="num">Value</th><th class="num">Δ</th></tr></thead>
+      <table><thead><tr><th>Player</th><th class="num">Haath</th><th class="num">Value</th><th class="num">Δ</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>`;
   }).join("");
@@ -247,7 +247,7 @@ $("#saveRound").onclick = async () => {
     const pid = +tr.dataset.pid;
     entries.push({
       player_id: pid,
-      hand: pid === declarerId ? 0 : (parseInt(tr.querySelector(".hand").value, 10) || 0),
+      haath: pid === declarerId ? 0 : (parseInt(tr.querySelector(".haath").value, 10) || 0),
       value: parseInt(tr.querySelector(".value").value, 10) || 0,
     });
   });
@@ -282,7 +282,7 @@ function startEdit(id) {
   r.entries.forEach(e => {
     const tr = document.querySelector(`#entryTable tbody tr[data-pid="${e.player_id}"]`);
     if (!tr) return;
-    tr.querySelector(".hand").value = e.hand;
+    tr.querySelector(".haath").value = e.haath;
     tr.querySelector(".value").value = e.value;
   });
   $("#roundFormTitle").scrollIntoView({ behavior: "smooth", block: "start" });

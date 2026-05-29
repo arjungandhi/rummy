@@ -23,7 +23,7 @@ type Player struct {
 // Entry is one player's raw inputs plus the computed delta for a round.
 type Entry struct {
 	PlayerID int64 `json:"player_id"`
-	Hand     int   `json:"hand"`
+	Haath     int   `json:"haath"`
 	Value    int   `json:"value"`
 	Delta    int   `json:"delta"`
 }
@@ -52,7 +52,7 @@ type RoundInput struct {
 	DeclarerID int64 `json:"declarer_id"`
 	Entries    []struct {
 		PlayerID int64 `json:"player_id"`
-		Hand     int   `json:"hand"`
+		Haath     int   `json:"haath"`
 		Value    int   `json:"value"`
 	} `json:"entries"`
 }
@@ -79,7 +79,7 @@ func NewStore(dsn string) (*Store, error) {
 			id        INTEGER PRIMARY KEY,
 			round_id  INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
 			player_id INTEGER NOT NULL REFERENCES players(id),
-			hand      INTEGER NOT NULL DEFAULT 0,
+			haath      INTEGER NOT NULL DEFAULT 0,
 			value     INTEGER NOT NULL DEFAULT 0,
 			UNIQUE(round_id, player_id)
 		);
@@ -201,13 +201,13 @@ func (s *Store) writeRound(roundID int64, in RoundInput) (int64, error) {
 	}
 
 	for _, e := range in.Entries {
-		hand := e.Hand
+		haath := e.Haath
 		if e.PlayerID == in.DeclarerID {
-			hand = 0 // declarer's hand never counts
+			haath = 0 // declarer's haath never counts
 		}
 		if _, err := tx.Exec(
-			`INSERT INTO entries (round_id, player_id, hand, value) VALUES (?, ?, ?, ?)`,
-			roundID, e.PlayerID, hand, e.Value,
+			`INSERT INTO entries (round_id, player_id, haath, value) VALUES (?, ?, ?, ?)`,
+			roundID, e.PlayerID, haath, e.Value,
 		); err != nil {
 			return 0, err
 		}
@@ -240,24 +240,24 @@ func (s *Store) DeleteRound(id int64) error {
 func computeDeltas(r *Round) map[int64]int {
 	n := len(r.Entries)
 	sumValue := 0
-	sumOtherHands := 0
+	sumOtherHaaths := 0
 	for _, e := range r.Entries {
 		sumValue += e.Value
 		if e.PlayerID != r.DeclarerID {
-			sumOtherHands += e.Hand
+			sumOtherHaaths += e.Haath
 		}
 	}
 	deltas := map[int64]int{}
 	for i := range r.Entries {
 		e := &r.Entries[i]
 		valueDelta := n*e.Value - sumValue
-		var handDelta int
+		var haathDelta int
 		if e.PlayerID == r.DeclarerID {
-			handDelta = sumOtherHands
+			haathDelta = sumOtherHaaths
 		} else {
-			handDelta = -e.Hand
+			haathDelta = -e.Haath
 		}
-		e.Delta = handDelta + valueDelta
+		e.Delta = haathDelta + valueDelta
 		deltas[e.PlayerID] = e.Delta
 	}
 	return deltas
@@ -303,7 +303,7 @@ func (s *Store) State() (State, error) {
 		roundByID[st.Rounds[i].ID] = &st.Rounds[i]
 	}
 
-	eRows, err := s.db.Query(`SELECT round_id, player_id, hand, value FROM entries ORDER BY id`)
+	eRows, err := s.db.Query(`SELECT round_id, player_id, haath, value FROM entries ORDER BY id`)
 	if err != nil {
 		return st, err
 	}
@@ -311,7 +311,7 @@ func (s *Store) State() (State, error) {
 	for eRows.Next() {
 		var rid int64
 		var e Entry
-		if err := eRows.Scan(&rid, &e.PlayerID, &e.Hand, &e.Value); err != nil {
+		if err := eRows.Scan(&rid, &e.PlayerID, &e.Haath, &e.Value); err != nil {
 			return st, err
 		}
 		if r := roundByID[rid]; r != nil {
