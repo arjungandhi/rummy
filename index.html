@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rummy Scores</title>
+<style>
+  :root {
+    --bg:#2E3440; --bg1:#3B4252; --bg2:#434C5E; --fg:#D8DEE9; --fg1:#ECEFF4;
+    --muted:#7b8494; --accent:#88C0D0; --accent2:#81A1C1; --good:#A3BE8C; --bad:#BF616A;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; line-height:1.4; }
+  main { max-width:760px; margin:0 auto; padding:1rem 1rem 4rem; }
+  h1 { color:var(--fg1); font-size:1.5rem; margin:.5rem 0 1rem; }
+  h2 { color:var(--fg1); font-size:1.1rem; margin:1.75rem 0 .6rem; border-bottom:1px solid var(--bg2); padding-bottom:.3rem; }
+  section { background:var(--bg1); border-radius:10px; padding:.9rem 1rem; margin-bottom:1rem; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid var(--bg2); }
+  th { color:var(--muted); font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.03em; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  input, select, button { font:inherit; }
+  input, select { background:var(--bg); color:var(--fg); border:1px solid var(--bg2);
+    border-radius:6px; padding:.4rem .5rem; }
+  input:focus, select:focus { outline:none; border-color:var(--accent); }
+  input[type=number] { width:5.5rem; }
+  button { background:var(--accent); color:var(--bg); border:none; border-radius:6px;
+    padding:.45rem .8rem; cursor:pointer; font-weight:600; }
+  button:hover { background:var(--accent2); }
+  button.ghost { background:transparent; color:var(--accent2); padding:.25rem .5rem; font-weight:500; }
+  button.ghost:hover { background:var(--bg2); }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .pos { color:var(--good); } .neg { color:var(--bad); } .muted { color:var(--muted); }
+  .pill { display:inline-block; background:var(--bg2); border-radius:999px; padding:.1rem .55rem; font-size:.85rem; }
+  .err { color:var(--bad); min-height:1.2em; font-size:.9rem; margin:.3rem 0; }
+  .crown { color:var(--accent); }
+  .player-chk { display:flex; align-items:center; gap:.45rem; background:var(--bg);
+    border:1px solid var(--bg2); border-radius:6px; padding:.35rem .6rem; cursor:pointer; }
+  .declarer-tag { font-size:.75rem; color:var(--bg); background:var(--accent); border-radius:999px; padding:.05rem .5rem; margin-left:.4rem; }
+  .rnd-head { display:flex; justify-content:space-between; align-items:center; }
+  .rnd { border-bottom:1px solid var(--bg2); padding:.6rem 0; }
+  .rnd:last-child { border-bottom:none; }
+  label.fld { display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>🃏 Rummy Scores</h1>
+
+  <section>
+    <h2 style="margin-top:.2rem;border:none">Standings</h2>
+    <table id="standings"><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h2>Players</h2>
+    <div id="players"></div>
+    <div class="row" style="margin-top:.6rem">
+      <input id="newPlayer" placeholder="New player name" autocomplete="off">
+      <button id="addPlayer">Add player</button>
+    </div>
+    <div class="err" id="playerErr"></div>
+  </section>
+
+  <section>
+    <h2 id="roundFormTitle">New round</h2>
+    <p class="muted" style="margin-top:0">Tick who played, choose who declared, enter each player's hand and value.</p>
+    <div id="participants" class="row"></div>
+    <div id="declarerRow" class="row" style="margin:.7rem 0">
+      <span class="muted">Declarer:</span>
+      <select id="declarer"></select>
+    </div>
+    <table id="entryTable"><thead><tr>
+      <th>Player</th><th class="num">Hand</th><th class="num">Value</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="err" id="roundErr"></div>
+    <div class="row">
+      <button id="saveRound">Save round</button>
+      <button id="cancelEdit" class="ghost" style="display:none">Cancel edit</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>History</h2>
+    <div id="history"></div>
+  </section>
+</main>
+
+<script>
+let state = { players: [], rounds: [], standings: [] };
+let editingRoundId = null;       // null = creating
+let selected = new Set();        // participating player ids (round form)
+let declarerId = null;
+
+const $ = sel => document.querySelector(sel);
+const nameOf = id => (state.players.find(p => p.id === id) || {}).name || "?";
+const fmt = n => (n > 0 ? "+" + n : "" + n);
+const cls = n => n > 0 ? "pos" : n < 0 ? "neg" : "muted";
+
+async function api(method, path, body) {
+  const opt = { method, headers: {} };
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function load() {
+  state = await api("GET", "/api/state");
+  // keep selection sane if players changed
+  selected = new Set([...selected].filter(id => state.players.some(p => p.id === id)));
+  if (declarerId && !selected.has(declarerId)) declarerId = null;
+  render();
+}
+
+function render() { renderStandings(); renderPlayers(); renderRoundForm(); renderHistory(); }
+
+function renderStandings() {
+  const tb = $("#standings tbody");
+  if (!state.standings.length) { tb.innerHTML = `<tr><td class="muted">No players yet.</td></tr>`; return; }
+  tb.innerHTML = `<tr><th>#</th><th>Player</th><th class="num">Score</th><th class="num">Rounds</th></tr>` +
+    state.standings.map((s, i) => {
+      const crown = i === 0 && s.rounds > 0 ? ' <span class="crown">♛</span>' : "";
+      return `<tr><td>${i + 1}</td><td>${esc(nameOf(s.player_id))}${crown}</td>
+        <td class="num ${cls(s.score)}">${fmt(s.score)}</td>
+        <td class="num muted">${s.rounds}</td></tr>`;
+    }).join("");
+}
+
+function renderPlayers() {
+  const c = $("#players");
+  if (!state.players.length) { c.innerHTML = `<span class="muted">No players yet.</span>`; return; }
+  const played = {};
+  state.standings.forEach(s => played[s.player_id] = s.rounds);
+  c.innerHTML = state.players.map(p => {
+    const hasPlayed = (played[p.id] || 0) > 0;
+    const del = hasPlayed
+      ? `<button class="ghost" disabled title="has played rounds">delete</button>`
+      : `<button class="ghost danger" data-del="${p.id}">delete</button>`;
+    return `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--bg2);padding:.35rem 0">
+      <span>${esc(p.name)} <span class="muted">(${played[p.id] || 0})</span></span>
+      <span class="row">
+        <button class="ghost" data-rename="${p.id}">rename</button>${del}
+      </span></div>`;
+  }).join("");
+}
+
+function renderRoundForm() {
+  $("#roundFormTitle").textContent = editingRoundId ? "Edit round" : "New round";
+  $("#cancelEdit").style.display = editingRoundId ? "" : "none";
+
+  $("#participants").innerHTML = state.players.map(p => `
+    <label class="player-chk">
+      <input type="checkbox" data-part="${p.id}" ${selected.has(p.id) ? "checked" : ""}>
+      ${esc(p.name)}
+    </label>`).join("") || `<span class="muted">Add players first.</span>`;
+
+  const parts = state.players.filter(p => selected.has(p.id));
+  $("#declarer").innerHTML = parts.map(p =>
+    `<option value="${p.id}" ${p.id === declarerId ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+  if (!declarerId && parts.length) declarerId = parts[0].id;
+
+  const tb = $("#entryTable tbody");
+  tb.innerHTML = parts.map(p => {
+    const isDecl = p.id === declarerId;
+    return `<tr data-pid="${p.id}">
+      <td>${esc(p.name)}${isDecl ? '<span class="declarer-tag">declared</span>' : ""}</td>
+      <td class="num"><input type="number" class="hand" value="0" ${isDecl ? "disabled title='declarer hand is 0'" : ""}></td>
+      <td class="num"><input type="number" class="value" value="0"></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderHistory() {
+  const c = $("#history");
+  if (!state.rounds.length) { c.innerHTML = `<span class="muted">No rounds yet.</span>`; return; }
+  c.innerHTML = state.rounds.slice().reverse().map((r, idx) => {
+    const num = state.rounds.length - idx;
+    const rows = r.entries.map(e => `
+      <tr>
+        <td>${esc(nameOf(e.player_id))}${e.player_id === r.declarer_id ? '<span class="declarer-tag">declared</span>' : ""}</td>
+        <td class="num muted">${e.hand}</td>
+        <td class="num muted">${e.value}</td>
+        <td class="num ${cls(e.delta)}">${fmt(e.delta)}</td>
+      </tr>`).join("");
+    return `<div class="rnd">
+      <div class="rnd-head">
+        <strong>Round ${num}</strong>
+        <span class="row">
+          <button class="ghost" data-edit="${r.id}">edit</button>
+          <button class="ghost danger" data-delr="${r.id}">delete</button>
+        </span>
+      </div>
+      <table><thead><tr><th>Player</th><th class="num">Hand</th><th class="num">Value</th><th class="num">Δ</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+  }).join("");
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function showErr(id, e) { $(id).textContent = e ? (e.message || e) : ""; }
+
+// ---- events ----
+$("#addPlayer").onclick = async () => {
+  const name = $("#newPlayer").value.trim();
+  if (!name) return;
+  try { await api("POST", "/api/players", { name }); $("#newPlayer").value = ""; showErr("#playerErr"); await load(); }
+  catch (e) { showErr("#playerErr", e); }
+};
+$("#newPlayer").addEventListener("keydown", e => { if (e.key === "Enter") $("#addPlayer").click(); });
+
+$("#players").addEventListener("click", async e => {
+  const ren = e.target.dataset.rename, del = e.target.dataset.del;
+  try {
+    if (ren) {
+      const cur = nameOf(+ren);
+      const name = prompt("Rename player", cur);
+      if (name && name.trim() && name.trim() !== cur) { await api("PUT", "/api/players/" + ren, { name: name.trim() }); await load(); }
+    } else if (del) {
+      if (confirm("Delete this player?")) { await api("DELETE", "/api/players/" + del); await load(); }
+    }
+  } catch (err) { showErr("#playerErr", err); }
+});
+
+$("#participants").addEventListener("change", e => {
+  const pid = e.target.dataset.part;
+  if (!pid) return;
+  const id = +pid;
+  if (e.target.checked) selected.add(id); else { selected.delete(id); if (declarerId === id) declarerId = null; }
+  renderRoundForm();
+});
+
+$("#declarer").addEventListener("change", e => { declarerId = +e.target.value; renderRoundForm(); });
+
+$("#saveRound").onclick = async () => {
+  showErr("#roundErr");
+  const parts = state.players.filter(p => selected.has(p.id));
+  if (parts.length < 2) { showErr("#roundErr", "Pick at least 2 players."); return; }
+  if (!declarerId) { showErr("#roundErr", "Pick a declarer."); return; }
+  const entries = [];
+  document.querySelectorAll("#entryTable tbody tr").forEach(tr => {
+    const pid = +tr.dataset.pid;
+    entries.push({
+      player_id: pid,
+      hand: pid === declarerId ? 0 : (parseInt(tr.querySelector(".hand").value, 10) || 0),
+      value: parseInt(tr.querySelector(".value").value, 10) || 0,
+    });
+  });
+  const body = { declarer_id: declarerId, entries };
+  try {
+    if (editingRoundId) await api("PUT", "/api/rounds/" + editingRoundId, body);
+    else await api("POST", "/api/rounds", body);
+    resetRoundForm();
+    await load();
+  } catch (e) { showErr("#roundErr", e); }
+};
+
+$("#cancelEdit").onclick = () => { resetRoundForm(); render(); };
+
+$("#history").addEventListener("click", async e => {
+  const ed = e.target.dataset.edit, dl = e.target.dataset.delr;
+  if (ed) { startEdit(+ed); return; }
+  if (dl && confirm("Delete this round?")) {
+    try { await api("DELETE", "/api/rounds/" + dl); if (editingRoundId === +dl) resetRoundForm(); await load(); }
+    catch (err) { showErr("#roundErr", err); }
+  }
+});
+
+function startEdit(id) {
+  const r = state.rounds.find(x => x.id === id);
+  if (!r) return;
+  editingRoundId = id;
+  selected = new Set(r.entries.map(e => e.player_id));
+  declarerId = r.declarer_id;
+  renderRoundForm();
+  // fill inputs from the round
+  r.entries.forEach(e => {
+    const tr = document.querySelector(`#entryTable tbody tr[data-pid="${e.player_id}"]`);
+    if (!tr) return;
+    tr.querySelector(".hand").value = e.hand;
+    tr.querySelector(".value").value = e.value;
+  });
+  $("#roundFormTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetRoundForm() { editingRoundId = null; selected = new Set(); declarerId = null; }
+
+load().catch(e => showErr("#playerErr", e));
+</script>
+</body>
+</html>
